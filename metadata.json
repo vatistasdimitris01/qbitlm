@@ -1,0 +1,5 @@
+{
+  "name": "qbit LM",
+  "description": "An AI-powered notebook that allows you to ground conversations in your own source documents. Add sources and ask questions to get insights based solely on the provided text.",
+  "requestFramePermissions": []
+}
