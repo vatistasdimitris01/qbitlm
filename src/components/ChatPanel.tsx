@@ -123,10 +123,10 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ notebook }) => {
                  }
             } else if (sourceType === 'website') {
                  const result = await generateGroundedResponse(messages, currentInput, currentMentionedSource.content);
-                 setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: result.text, citations: result.citations } : msg));
+                 setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: result.text ?? '', citations: result.citations } : msg));
             } else if (sourceType === 'image' || sourceType === 'video') {
                  const result = await generateMediaResponse(currentInput, currentMentionedSource);
-                 setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: result.text } : msg));
+                 setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: result.text ?? '' } : msg));
             }
         } else {
             const stream = await generateGeneralResponseStream(messages, currentInput);

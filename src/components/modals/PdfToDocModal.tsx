@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import ToolModalBase from './ToolModalBase';
 import { UploadIcon } from '../icons/UploadIcon';
 import { FileTextIcon } from '../icons/FileTextIcon';
-import * as pdfjsLib from 'pdfjs-dist/build/pdf.mjs';
+import * as pdfjsLib from 'pdfjs-dist';
 
 // Set workerSrc for pdf.js to use the CDN version compatible with Vite bundling
 pdfjsLib.GlobalWorkerOptions.workerSrc = `https://cdnjs.cloudflare.com/ajax/libs/pdf.js/${pdfjsLib.version}/pdf.worker.mjs`;
