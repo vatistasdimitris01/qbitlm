@@ -4,6 +4,12 @@ import { NotebookIcon } from './icons/NotebookIcon';
 import { FolderPlusIcon } from './icons/FolderPlusIcon';
 import { DotsVerticalIcon } from './icons/DotsVerticalIcon';
 import { TrashIcon } from './icons/TrashIcon';
+import ToolsToolbar from './ToolsToolbar';
+import ImageToPdfModal from './modals/ImageToPdfModal';
+import PdfToDocModal from './modals/PdfToDocModal';
+import MergePdfModal from './modals/MergePdfModal';
+
+type ActiveTool = 'imageToPdf' | 'pdfToDoc' | 'mergePdf' | null;
 
 interface HomePageProps {
     notebooks: Notebook[];
@@ -82,6 +88,7 @@ const NotebookCard: React.FC<{ notebook: Notebook; onSelect: () => void; onDelet
 
 const HomePage: React.FC<HomePageProps> = ({ notebooks, onSelectNotebook, onCreateNotebook, onDeleteNotebook }) => {
     const sortedNotebooks = [...notebooks].sort((a, b) => b.lastModified - a.lastModified);
+    const [activeTool, setActiveTool] = useState<ActiveTool>(null);
     
     return (
         <div className="flex flex-col h-screen">
@@ -92,7 +99,7 @@ const HomePage: React.FC<HomePageProps> = ({ notebooks, onSelectNotebook, onCrea
                 </div>
             </header>
             <main className="flex-1 overflow-y-auto">
-                <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-8">
+                <div className="max-w-7xl mx-auto px-4 md:px-6 lg:px-8 py-8 pb-24">
                     <h2 className="text-2xl font-bold text-gray-900 mb-6">Recent notebooks</h2>
                     <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
                         <button
@@ -113,6 +120,11 @@ const HomePage: React.FC<HomePageProps> = ({ notebooks, onSelectNotebook, onCrea
                     </div>
                 </div>
             </main>
+            <ToolsToolbar onToolSelect={setActiveTool} />
+
+            {activeTool === 'imageToPdf' && <ImageToPdfModal onClose={() => setActiveTool(null)} />}
+            {activeTool === 'pdfToDoc' && <PdfToDocModal onClose={() => setActiveTool(null)} />}
+            {activeTool === 'mergePdf' && <MergePdfModal onClose={() => setActiveTool(null)} />}
         </div>
     );
 };

@@ -1,4 +1,4 @@
-import { GoogleGenAI, Chat } from "@google/genai";
+import { GoogleGenAI } from "@google/genai";
 import { ChatMessage, Source } from "../types";
 
 if (!process.env.API_KEY) {
@@ -6,34 +6,54 @@ if (!process.env.API_KEY) {
 }
 
 const ai = new GoogleGenAI({ apiKey: process.env.API_KEY });
+const model = 'gemini-2.5-flash';
 
-export const createChatSession = (sourceContent: string): Chat => {
-  const systemInstruction = `You are an expert assistant specializing in analyzing and answering questions about provided documents. Your name is qbit LM. You must strictly base your answers *only* on the text provided in the 'CONTEXT' section. Do not use any external knowledge or make assumptions beyond the text. If the user's question cannot be answered using the context, you must respond with: "I'm sorry, but I can't answer that question based on the provided source material." Always be concise and direct. --- CONTEXT: ${sourceContent}`;
-
-  const chat = ai.chats.create({
-    model: 'gemini-2.5-flash',
-    config: {
-      systemInstruction,
-    },
-  });
-
-  return chat;
-};
-
-export const generateGroundedResponse = async (history: ChatMessage[], newUserInput: string, url: string) => {
-    const systemInstruction = `You are an expert web analyst. Your goal is to answer questions based *only* on the content of the provided website URL. Use your search tool to explore the website. Do not use any other external knowledge. If the answer cannot be found on the website, state that clearly. The website to analyze is: ${url}`;
-
-    const contents = [
+const buildContents = (history: ChatMessage[], newUserInput: string) => {
+    return [
         ...history.map(msg => ({
             role: msg.role,
             parts: [{ text: msg.content }]
         })),
         { role: 'user', parts: [{ text: newUserInput }] }
     ];
+};
+
+export const generateGeneralResponseStream = async (history: ChatMessage[], newUserInput: string) => {
+    const systemInstruction = `You are a helpful and knowledgeable assistant named qbit LM. Answer the user's questions clearly and concisely.`;
+    const response = await ai.models.generateContentStream({
+        model,
+        contents: buildContents(history, newUserInput),
+        config: { systemInstruction },
+    });
+    return response;
+};
+
+export const generateTextContextResponseStream = async (history: ChatMessage[], newUserInput: string, source: Source) => {
+    const systemInstruction = `You are an expert assistant, qbit LM. Your task is to answer questions about a provided document.
+- First, use the information from the document context provided below.
+- If the document doesn't contain the answer, use your own knowledge to respond, but clearly state that the information is not from the source document.
+- The user is asking about the document titled: "${source.title}".
+---
+DOCUMENT CONTEXT:
+${source.content}
+---`;
+    const response = await ai.models.generateContentStream({
+        model,
+        contents: buildContents(history, newUserInput),
+        config: { systemInstruction },
+    });
+    return response;
+};
+
+
+export const generateGroundedResponse = async (history: ChatMessage[], newUserInput: string, url: string) => {
+    const systemInstruction = `You are an expert web analyst named qbit LM. Your goal is to answer questions based *only* on the content of the provided website URL. Use your search tool to explore the website. Do not use any other external knowledge. If the answer cannot be found on the website, state that clearly. The website to analyze is: ${url}`;
+
+    const contents = buildContents(history, newUserInput);
 
     try {
         const response = await ai.models.generateContent({
-            model: "gemini-2.5-flash",
+            model,
             contents: contents,
             config: {
                 systemInstruction,
@@ -68,9 +88,9 @@ const dataUrlToBase64 = (dataUrl: string): string => {
     return parts[1];
 };
 
-export const generateMediaResponse = async (prompt: string, source: { content: string, mimeType?: string }) => {
-    if (!source.mimeType) {
-        return { text: "Cannot process media: missing MIME type.", citations: [] };
+export const generateMediaResponse = async (prompt: string, source: Source) => {
+    if (!source.mimeType || !source.content) {
+        return { text: "Cannot process media: missing MIME type or content.", citations: [] };
     }
     
     const mediaPart = {

@@ -1,14 +1,21 @@
-import React, { useState, useEffect, useRef } from 'react';
-import type { Chat } from '@google/genai';
-import { Source, ChatMessage } from '../types';
-import { createChatSession, generateGroundedResponse, generateMediaResponse } from '../services/geminiService';
+import React, { useState, useEffect, useRef, useMemo } from 'react';
+import { Notebook, ChatMessage, Source } from '../types';
+import {
+  generateGeneralResponseStream,
+  generateTextContextResponseStream,
+  generateGroundedResponse,
+  generateMediaResponse
+} from '../services/geminiService';
 import { UserIcon } from './icons/UserIcon';
 import { SparklesIcon } from './icons/SparklesIcon';
 import { ArrowUpIcon } from './icons/ArrowUpIcon';
 import { UploadIcon } from './icons/UploadIcon';
+import { AtSymbolIcon } from './icons/AtSymbolIcon';
+import { XIcon } from './icons/XIcon';
+import { SourceIcon } from './SourcePanel'; // Re-using SourceIcon component
 
 interface ChatPanelProps {
-  source: Source | null;
+  notebook: Notebook | null;
 }
 
 const Citations: React.FC<{ citations: ChatMessage['citations'] }> = ({ citations }) => {
@@ -50,57 +57,23 @@ const ChatMessageView: React.FC<{ message: ChatMessage }> = ({ message }) => {
   );
 };
 
-const SourcePreview: React.FC<{ source: Source }> = ({ source }) => {
-    const { type } = source.origin;
-    const commonTitle = <span className="font-semibold text-gray-800 truncate">{source.title}</span>;
-
-    if (type === 'image') {
-        return (
-            <div className="flex items-center gap-3 min-w-0">
-                <img src={source.content} alt={source.title} className="h-10 w-10 object-cover rounded-md border border-gray-200" />
-                {commonTitle}
-            </div>
-        );
-    }
-    if (type === 'video') {
-        return (
-             <div className="flex items-center gap-3 min-w-0">
-                <video src={source.content} className="h-10 w-10 object-cover rounded-md border border-gray-200 bg-black" />
-                 {commonTitle}
-            </div>
-        );
-    }
-    return <span className="font-semibold text-indigo-600 truncate">{source.title}</span>;
-};
-
-const ChatPanel: React.FC<ChatPanelProps> = ({ source }) => {
-  const [chatSession, setChatSession] = useState<Chat | null>(null);
+const ChatPanel: React.FC<ChatPanelProps> = ({ notebook }) => {
   const [messages, setMessages] = useState<ChatMessage[]>([]);
   const [userInput, setUserInput] = useState('');
   const [isLoading, setIsLoading] = useState(false);
+  const [isMentioning, setIsMentioning] = useState(false);
+  const [mentionedSource, setMentionedSource] = useState<Source | null>(null);
+
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const textareaRef = useRef<HTMLTextAreaElement>(null);
-
-  const isMediaAndNotPersisted = (source: Source | null): boolean => {
-    if (!source) return false;
-    const isMedia = source.origin.type === 'image' || source.origin.type === 'video';
-    return isMedia && !source.content;
-  };
+  const mentionRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
-    if (source && !isMediaAndNotPersisted(source)) {
-      if (source.origin.type === 'text' || source.origin.type === 'file') {
-        const session = createChatSession(source.content);
-        setChatSession(session);
-      } else {
-        setChatSession(null);
-      }
+    if (notebook) {
       setMessages([]);
-    } else {
-        setMessages([]);
-        setChatSession(null);
+      setMentionedSource(null);
     }
-  }, [source]);
+  }, [notebook]);
   
   useEffect(() => {
     messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
@@ -113,99 +86,160 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ source }) => {
     }
   }, [userInput]);
 
+  useEffect(() => {
+      const handleClickOutside = (event: MouseEvent) => {
+          if (mentionRef.current && !mentionRef.current.contains(event.target as Node)) {
+              setIsMentioning(false);
+          }
+      };
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => {
+          document.removeEventListener("mousedown", handleClickOutside);
+      };
+  }, []);
+
   const handleSendMessage = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!userInput.trim() || !source || isLoading || isMediaAndNotPersisted(source)) return;
+    if (!userInput.trim() || !notebook || isLoading) return;
 
-    const userMessage: ChatMessage = { role: 'user', content: userInput };
+    const currentInput = userInput;
+    const currentMentionedSource = mentionedSource;
+    const userMessage: ChatMessage = { role: 'user', content: currentInput };
     setMessages(prev => [...prev, userMessage]);
     setIsLoading(true);
-    const currentInput = userInput;
     setUserInput('');
+    setMentionedSource(null);
 
-    const sourceType = source.origin.type;
+    const modelMessage: ChatMessage = { role: 'model', content: '' };
+    setMessages(prev => [...prev, modelMessage]);
 
-    if (sourceType === 'website') {
-      const modelMessage: ChatMessage = { role: 'model', content: '' };
-      setMessages(prev => [...prev, modelMessage]);
-      const { text, citations } = await generateGroundedResponse(messages, currentInput, source.content);
-      setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: text, citations } : msg));
-      setIsLoading(false);
-
-    } else if (sourceType === 'image' || sourceType === 'video') {
-      const modelMessage: ChatMessage = { role: 'model', content: '' };
-      setMessages(prev => [...prev, modelMessage]);
-      const { text, citations } = await generateMediaResponse(currentInput, source);
-      setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: text, citations } : msg));
-      setIsLoading(false);
-      
-    } else if (chatSession) {
-      const modelMessage: ChatMessage = { role: 'model', content: '' };
-      setMessages(prev => [...prev, modelMessage]);
-      try {
-          const stream = await chatSession.sendMessageStream({ message: currentInput });
-          for await (const chunk of stream) {
-              const chunkText = chunk.text;
-              setMessages(prev => {
-                  const newMessages = [...prev];
-                  const lastMessage = newMessages[newMessages.length - 1];
-                  if(lastMessage) {
-                    lastMessage.content += chunkText;
-                  }
-                  return newMessages;
-              });
-          }
-      } catch (error) {
-          console.error("Error sending message:", error);
-          setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: "Sorry, something went wrong. Please try again." } : msg));
-      } finally {
-          setIsLoading(false);
-      }
+    try {
+        if (currentMentionedSource) {
+            const sourceType = currentMentionedSource.origin.type;
+            if (sourceType === 'text' || sourceType === 'file') {
+                 const stream = await generateTextContextResponseStream(messages, currentInput, currentMentionedSource);
+                 for await (const chunk of stream) {
+                    setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: msg.content + chunk.text } : msg));
+                 }
+            } else if (sourceType === 'website') {
+                 const result = await generateGroundedResponse(messages, currentInput, currentMentionedSource.content);
+                 setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: result.text, citations: result.citations } : msg));
+            } else if (sourceType === 'image' || sourceType === 'video') {
+                 const result = await generateMediaResponse(currentInput, currentMentionedSource);
+                 setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: result.text } : msg));
+            }
+        } else {
+            const stream = await generateGeneralResponseStream(messages, currentInput);
+            for await (const chunk of stream) {
+                setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: msg.content + chunk.text } : msg));
+            }
+        }
+    } catch (error) {
+        console.error("Error sending message:", error);
+        setMessages(prev => prev.map((msg, i) => i === prev.length - 1 ? { ...msg, content: "Sorry, something went wrong. Please try again." } : msg));
+    } finally {
+        setIsLoading(false);
     }
   };
 
-  if (!source) {
+  const handleSelectMention = (source: Source) => {
+    setMentionedSource(source);
+    setIsMentioning(false);
+    textareaRef.current?.focus();
+  };
+
+  if (!notebook) {
     return (
       <div className="flex-1 flex flex-col items-center justify-center text-center text-gray-500 bg-slate-50 p-4">
-        <SparklesIcon className="w-16 h-16 text-gray-300 mb-4" />
-        <p className="text-lg font-medium">Select a source to start chatting.</p>
-        <p className="max-w-md mt-1 text-sm">Your conversation will be based on the content of the selected document.</p>
       </div>
     );
   }
 
   return (
     <div className="flex-1 flex flex-col bg-slate-50">
-      <div className="flex-1 overflow-y-auto p-4">
+      <div className="flex-1 overflow-y-auto">
         <div className="max-w-4xl mx-auto w-full">
-            {messages.length === 0 && !isMediaAndNotPersisted(source) && (
-                <div className="text-center py-10 text-gray-500">
-                    <p>Ask a question about "{source.title}" to begin.</p>
+            <div className="sticky top-0 bg-slate-50/80 backdrop-blur-sm z-10 p-4">
+                 <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-3 text-sm text-indigo-800">
+                    <p>
+                        <span className="font-semibold">
+                            This chat is using {notebook.sources.length} source{notebook.sources.length !== 1 ? 's' : ''}
+                        </span> from this notebook.
+                    </p>
+                    <p className="mt-1 text-xs">Mention a source with <span className="font-mono bg-indigo-100 px-1 py-0.5 rounded">@</span> to focus the conversation, or ask a general question.</p>
                 </div>
-            )}
-            {isMediaAndNotPersisted(source) && (
-                <div className="text-center py-10 text-gray-500 bg-white rounded-lg shadow-sm">
-                    <p className="font-semibold text-gray-700">Media content not available</p>
-                    <p className="mt-1">Image and video content is not saved between sessions.</p>
-                    <p>Please re-add this source to chat with it.</p>
-                </div>
-            )}
-            <div className="divide-y divide-gray-200">
-              {messages.map((msg, index) => (
-                  <ChatMessageView key={index} message={msg} />
-              ))}
             </div>
-            <div ref={messagesEndRef} />
+            <div className="px-4">
+                {messages.length === 0 && (
+                    <div className="text-center py-10 text-gray-500">
+                      {notebook.sources.length > 0 ? (
+                        <p>Ask a question about "{notebook.title}" to begin.</p>
+                      ) : (
+                        <div className="flex flex-col items-center justify-center">
+                          <UploadIcon className="w-16 h-16 text-gray-300 mb-4" />
+                          <p className="text-lg font-medium">This notebook is empty.</p>
+                          <p className="max-w-md mt-1 text-sm">Add a source to start a conversation.</p>
+                        </div>
+                      )}
+                    </div>
+                )}
+                <div className="divide-y divide-gray-200">
+                  {messages.map((msg, index) => (
+                      <ChatMessageView key={index} message={msg} />
+                  ))}
+                </div>
+                <div ref={messagesEndRef} />
+            </div>
         </div>
       </div>
       <div className="px-4 pb-4 bg-gradient-to-t from-slate-50 to-transparent">
-        <div className="w-full">
-          {isMediaAndNotPersisted(source) ? (
-            <div className="relative flex items-center p-2 bg-white border border-gray-200 rounded-full shadow-lg">
-              <p className="w-full text-center text-sm text-gray-500 py-2">Please re-add this media file to enable chat.</p>
+        <div className="w-full max-w-4xl mx-auto">
+          <form onSubmit={handleSendMessage} className="relative flex items-center p-2 bg-white border border-gray-200 rounded-full shadow-lg transition-shadow focus-within:ring-2 focus-within:ring-indigo-500">
+            <div className="relative" ref={mentionRef}>
+              <button
+                  type="button"
+                  onClick={() => setIsMentioning(prev => !prev)}
+                  className="flex-shrink-0 w-10 h-10 flex items-center justify-center rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors focus:outline-none"
+                  aria-label="Mention a source"
+              >
+                  <AtSymbolIcon className="w-5 h-5" />
+              </button>
+              {isMentioning && (
+                <div className="absolute bottom-full mb-2 w-72 bg-white rounded-lg shadow-2xl border border-gray-200 overflow-hidden z-20">
+                  <div className="p-2 text-xs font-semibold text-gray-500 border-b">Mention a source</div>
+                  <ul className="max-h-60 overflow-y-auto">
+                    {notebook.sources.length > 0 ? notebook.sources.map(source => (
+                      <li key={source.id}>
+                        <button 
+                          type="button"
+                          onClick={() => handleSelectMention(source)}
+                          className="w-full flex items-center text-left p-2 hover:bg-indigo-50"
+                        >
+                          <SourceIcon type={source.origin.type} />
+                          <span className="truncate text-sm text-gray-800">{source.title}</span>
+                        </button>
+                      </li>
+                    )) : (
+                      <li className="p-4 text-sm text-center text-gray-500">No sources in this notebook.</li>
+                    )}
+                  </ul>
+                </div>
+              )}
             </div>
-          ) : (
-            <form onSubmit={handleSendMessage} className="relative flex items-center p-2 bg-white border border-gray-200 rounded-full shadow-lg transition-shadow focus-within:ring-2 focus-within:ring-indigo-500">
+            {mentionedSource && (
+              <div className="flex items-center gap-1.5 bg-indigo-100 text-indigo-800 text-sm font-medium pl-3 pr-2 py-1 rounded-full mx-2 whitespace-nowrap">
+                <SourceIcon type={mentionedSource.origin.type} />
+                <span className="truncate max-w-xs">{mentionedSource.title}</span>
+                <button
+                  type="button"
+                  onClick={() => setMentionedSource(null)}
+                  className="p-0.5 rounded-full hover:bg-indigo-200"
+                  aria-label={`Remove mention of ${mentionedSource.title}`}
+                >
+                  <XIcon className="w-3 h-3"/>
+                </button>
+              </div>
+            )}
             <textarea
                 ref={textareaRef}
                 value={userInput}
@@ -216,8 +250,8 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ source }) => {
                         handleSendMessage(e);
                     }
                 }}
-                placeholder={`Ask a question about ${source.title}...`}
-                className="flex-1 w-full bg-transparent pl-4 pr-2 py-2 text-gray-900 resize-none focus:outline-none focus:ring-0 max-h-40 overflow-y-auto"
+                placeholder={mentionedSource ? `Ask about ${mentionedSource.title}...` : 'Ask a question...'}
+                className="flex-1 w-full bg-transparent pl-2 pr-2 py-2 text-gray-900 resize-none focus:outline-none focus:ring-0 max-h-40 overflow-y-auto"
                 rows={1}
                 disabled={isLoading}
             />
@@ -229,8 +263,7 @@ const ChatPanel: React.FC<ChatPanelProps> = ({ source }) => {
             >
                 <ArrowUpIcon className="w-5 h-5 text-white" />
             </button>
-            </form>
-          )}
+          </form>
         </div>
       </div>
     </div>

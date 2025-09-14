@@ -188,7 +188,8 @@ const AddSourceModal: React.FC<{ onAdd: AddMultipleSourcesHandler; onClose: () =
     );
 };
 
-const SourceIcon: React.FC<{ type: SourceOrigin['type'] }> = ({ type }) => {
+// FIX: Export SourceIcon to be used in other components
+export const SourceIcon: React.FC<{ type: SourceOrigin['type'] }> = ({ type }) => {
     const className = "w-5 h-5 mr-3 text-gray-400 flex-shrink-0";
     switch (type) {
         case 'file': return <FileTextIcon className={className} />;
@@ -204,23 +205,16 @@ const SourcePanel: React.FC<{
   sources: Source[];
   onAddMultipleSources: AddMultipleSourcesHandler;
   onDeleteSource: DeleteSourceHandler;
-  selectedSourceId: string | null;
-  onSelectSource: (id: string) => void;
   isOpen: boolean;
   onClose: () => void;
-}> = ({ sources, onAddMultipleSources, onDeleteSource, selectedSourceId, onSelectSource, isOpen, onClose }) => {
+}> = ({ sources, onAddMultipleSources, onDeleteSource, isOpen, onClose }) => {
     const [isModalOpen, setIsModalOpen] = useState(false);
 
     const handleDelete = (e: React.MouseEvent, sourceId: string) => {
-        e.stopPropagation(); // Prevent the source from being selected when clicking delete
+        e.stopPropagation(); // Prevent any parent handlers from firing
         if (window.confirm("Are you sure you want to delete this source?")) {
             onDeleteSource(sourceId);
         }
-    };
-    
-    const handleSelectAndClose = (sourceId: string) => {
-        onSelectSource(sourceId);
-        onClose();
     };
 
     return (
@@ -253,13 +247,12 @@ const SourcePanel: React.FC<{
                         <ul className="p-2">
                             {sources.map(source => (
                                 <li key={source.id} className="group relative">
-                                    <button
-                                        onClick={() => handleSelectAndClose(source.id)}
-                                        className={`w-full flex items-center text-left p-3 rounded-md transition-colors ${selectedSourceId === source.id ? 'bg-indigo-100 text-indigo-700 font-semibold' : 'hover:bg-gray-100 text-gray-700'}`}
+                                    <div
+                                        className={`w-full flex items-center text-left p-3 rounded-md text-gray-700`}
                                     >
                                         <SourceIcon type={source.origin.type} />
                                         <span className="truncate flex-1 pr-6">{source.title}</span>
-                                    </button>
+                                    </div>
                                     <button
                                         onClick={(e) => handleDelete(e, source.id)}
                                         className="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded-full text-gray-400 hover:bg-red-100 hover:text-red-600 opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useRef, useEffect } from 'react';
+import React, { useState, useRef, useEffect } from 'react';
 import { Notebook, Source } from '../types';
 import SourcePanel from './SourcePanel';
 import ChatPanel from './ChatPanel';
@@ -12,7 +12,6 @@ interface NotebookPageProps {
 }
 
 const NotebookPage: React.FC<NotebookPageProps> = ({ notebook, onUpdateNotebook, onGoHome }) => {
-  const [selectedSourceId, setSelectedSourceId] = useState<string | null>(notebook.sources[0]?.id || null);
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const [title, setTitle] = useState(notebook.title);
   const [isSourcePanelOpen, setIsSourcePanelOpen] = useState(false);
@@ -31,9 +30,6 @@ const NotebookPage: React.FC<NotebookPageProps> = ({ notebook, onUpdateNotebook,
       sources: [...notebook.sources, ...newSources],
     };
     onUpdateNotebook(updatedNotebook);
-    if (newSources.length > 0) {
-      setSelectedSourceId(newSources[0].id);
-    }
   };
 
   const handleDeleteSource = (sourceIdToDelete: string) => {
@@ -42,11 +38,6 @@ const NotebookPage: React.FC<NotebookPageProps> = ({ notebook, onUpdateNotebook,
       sources: notebook.sources.filter(s => s.id !== sourceIdToDelete),
     };
     onUpdateNotebook(updatedNotebook);
-    
-    if (selectedSourceId === sourceIdToDelete) {
-      // Select the first source if it exists, otherwise null
-      setSelectedSourceId(updatedNotebook.sources[0]?.id || null);
-    }
   };
 
   const handleTitleBlur = () => {
@@ -69,10 +60,6 @@ const NotebookPage: React.FC<NotebookPageProps> = ({ notebook, onUpdateNotebook,
         setIsEditingTitle(false);
     }
   };
-
-  const selectedSource = useMemo(() => {
-    return notebook.sources.find(s => s.id === selectedSourceId) || null;
-  }, [notebook.sources, selectedSourceId]);
 
   return (
     <div className="flex h-screen font-sans bg-slate-50 text-gray-800 flex-col">
@@ -110,12 +97,10 @@ const NotebookPage: React.FC<NotebookPageProps> = ({ notebook, onUpdateNotebook,
           sources={notebook.sources}
           onAddMultipleSources={handleAddMultipleSources}
           onDeleteSource={handleDeleteSource}
-          selectedSourceId={selectedSourceId}
-          onSelectSource={setSelectedSourceId}
           isOpen={isSourcePanelOpen}
           onClose={() => setIsSourcePanelOpen(false)}
         />
-        <ChatPanel key={selectedSource?.id} source={selectedSource} />
+        <ChatPanel notebook={notebook} />
       </main>
     </div>
   );
